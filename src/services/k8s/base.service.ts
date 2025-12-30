@@ -21,14 +21,46 @@ export class K8sBaseService {
 
     // 根据环境加载配置
     if (process.env.KUBECONFIG_PATH) {
+      console.log('📁 使用 kubeconfig 文件:', process.env.KUBECONFIG_PATH);
       kc.loadFromFile(process.env.KUBECONFIG_PATH);
     } else if (process.env.KUBECONFIG_CONTENT) {
+      console.log('📝 使用 kubeconfig 内容');
       kc.loadFromString(process.env.KUBECONFIG_CONTENT);
     } else if (process.env.APISERVER && process.env.USER_TOKEN) {
+      console.log('🔑 使用环境变量配置');
       // 使用环境变量手动配置
       this.configureFromEnv(kc);
     } else {
+      console.log('🏢 使用集群内配置');
       kc.loadFromCluster();
+    }
+
+    // 输出当前加载的配置信息
+    try {
+      const currentContext = kc.getCurrentContext();
+      const cluster = kc.getCurrentCluster();
+      const user = kc.getCurrentUser();
+
+      console.log('✅ KubeConfig 加载成功:');
+      console.log('   Context:', currentContext);
+      console.log('   Cluster:', cluster?.name);
+      console.log('   Server:', cluster?.server);
+      console.log('   User:', user?.name);
+
+      // 检查认证方式
+      if (user?.token) {
+        console.log('   认证方式: Token');
+      } else if (user?.certFile && user?.keyFile) {
+        console.log('   认证方式: 客户端证书');
+        console.log('   证书文件:', user.certFile);
+        console.log('   密钥文件:', user.keyFile);
+      } else if (user?.certData && user?.keyData) {
+        console.log('   认证方式: 客户端证书 (Base64)');
+      } else {
+        console.warn('⚠️  警告: 未检测到有效的认证信息!');
+      }
+    } catch (error) {
+      console.error('❌ 读取 kubeconfig 信息失败:', error);
     }
 
     this.k8sApi = {

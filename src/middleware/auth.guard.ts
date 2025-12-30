@@ -4,6 +4,7 @@ import { Context } from 'elysia'
 export const authGuard = ({ request, set, path }: Context) => {
   
   const expectedToken = process.env.AUTH_TOKEN;
+  console.log('expectedToken:', expectedToken);
   
   // 检查 AUTH_TOKEN 环境变量是否配置
   if (!expectedToken) {
@@ -16,12 +17,13 @@ export const authGuard = ({ request, set, path }: Context) => {
   }
 
   const authorization = request.headers.get('authorization');
+  console.log('authorization:', authorization);
   if (!authorization?.startsWith('Bearer ')) {
     set.status = 401;
     set.headers['WWW-Authenticate'] = 'Bearer realm="api", error="invalid_token"';
     return {
       success: false,
-      message: '无效的认证令牌',
+      message: '无效的认证令牌1',
       error: 'Invalid token'
     };
   }
@@ -32,7 +34,7 @@ export const authGuard = ({ request, set, path }: Context) => {
     set.headers['WWW-Authenticate'] = 'Bearer realm="api", error="invalid_token"';
     return {
       success: false,
-      message: '无效的认证令牌',
+      message: '无效的认证令牌2',
       error: 'Invalid token'
     };
   }
