@@ -23,16 +23,15 @@ export class K8sBaseService {
     const kc = new k8s.KubeConfig();
 
     // 根据环境加载配置
-    if (process.env.KUBECONFIG_PATH) {
+    if (process.env.USER_TOKEN) {
+      console.log('🔑 使用环境变量配置');
+      this.configureFromEnv(kc);
+    } else if (process.env.KUBECONFIG_PATH) {
       console.log('📁 使用 kubeconfig 文件:', process.env.KUBECONFIG_PATH);
       kc.loadFromFile(process.env.KUBECONFIG_PATH);
     } else if (process.env.KUBECONFIG_CONTENT) {
       console.log('📝 使用 kubeconfig 内容');
       kc.loadFromString(process.env.KUBECONFIG_CONTENT);
-    } else if (process.env.APISERVER && process.env.USER_TOKEN) {
-      console.log('🔑 使用环境变量配置');
-      // 使用环境变量手动配置
-      this.configureFromEnv(kc);
     } else {
       console.log('🏢 使用集群内配置');
       kc.loadFromCluster();
@@ -82,9 +81,15 @@ export class K8sBaseService {
    * 从环境变量配置 KubeConfig
    */
   private configureFromEnv(kc: k8s.KubeConfig): void {
+    const apiServer = process.env.APISERVER || this.resolveApiServerFromKubeconfig();
+
+    if (!apiServer) {
+      throw new Error('未找到 APISERVER，且无法从 kubeconfig 自动解析 Kubernetes API 地址');
+    }
+
     const cluster = {
       name: 'default-cluster',
-      server: process.env.APISERVER!,
+      server: apiServer,
       skipTLSVerify: true // 在开发环境中跳过 TLS 验证
     };
 
@@ -106,6 +111,29 @@ export class K8sBaseService {
       contexts: [context],
       currentContext: context.name
     });
+  }
+
+  /**
+   * 当 APISERVER 未显式配置时，优先从 kubeconfig 读取当前上下文的 server。
+   */
+  private resolveApiServerFromKubeconfig(): string | undefined {
+    try {
+      const configPath = process.env.KUBECONFIG_PATH;
+      const kubeconfig = new k8s.KubeConfig();
+
+      if (configPath) {
+        console.log('📁 从 kubeconfig 解析 APISERVER:', configPath);
+        kubeconfig.loadFromFile(configPath);
+      } else {
+        console.log('📁 从默认 kubeconfig 解析 APISERVER');
+        kubeconfig.loadFromDefault();
+      }
+
+      return kubeconfig.getCurrentCluster()?.server;
+    } catch (error) {
+      console.error('❌ 解析 kubeconfig 中的 APISERVER 失败:', error);
+      return undefined;
+    }
   }
 
   /**
@@ -181,8 +209,9 @@ export class K8sBaseService {
 
       // 如果有认证信息，添加 kubectl 参数
       const args = fullCommand.split(' ');
-      if (process.env.USER_TOKEN && process.env.APISERVER) {
-        args.push('--server', process.env.APISERVER);
+      const apiServer = process.env.APISERVER || this.resolveApiServerFromKubeconfig();
+      if (process.env.USER_TOKEN && apiServer) {
+        args.push('--server', apiServer);
         args.push('--token', process.env.USER_TOKEN);
         args.push('--insecure-skip-tls-verify');
       }
