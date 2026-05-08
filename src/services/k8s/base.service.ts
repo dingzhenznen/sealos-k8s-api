@@ -3,6 +3,9 @@
  */
 
 import * as k8s from '@kubernetes/client-node';
+import { setHeaderMiddleware } from '@kubernetes/client-node';
+import { createConfiguration } from '@kubernetes/client-node/dist/gen/index.js';
+import { ServerConfiguration } from '@kubernetes/client-node/dist/gen/servers.js';
 import { K8sOperationResult } from '../common/types';
 import { formatError } from '../common/utils';
 
@@ -64,11 +67,11 @@ export class K8sBaseService {
     }
 
     this.k8sApi = {
-      coreV1Api: kc.makeApiClient(k8s.CoreV1Api),
-      appsV1Api: kc.makeApiClient(k8s.AppsV1Api),
-      networkingV1Api: kc.makeApiClient(k8s.NetworkingV1Api),
-      customObjectsApi: kc.makeApiClient(k8s.CustomObjectsApi),
-      apiextensionsV1Api: kc.makeApiClient(k8s.ApiextensionsV1Api),
+      coreV1Api: this.createApiClient(kc, k8s.CoreV1Api),
+      appsV1Api: this.createApiClient(kc, k8s.AppsV1Api),
+      networkingV1Api: this.createApiClient(kc, k8s.NetworkingV1Api),
+      customObjectsApi: this.createApiClient(kc, k8s.CustomObjectsApi),
+      apiextensionsV1Api: this.createApiClient(kc, k8s.ApiextensionsV1Api),
       kc
     };
 
@@ -103,6 +106,31 @@ export class K8sBaseService {
       contexts: [context],
       currentContext: context.name
     });
+  }
+
+  /**
+   * 兼容 Bun 下 token 鉴权：显式注入 BearerToken，避免生成客户端遗漏认证头。
+   */
+  private createApiClient<T>(kc: k8s.KubeConfig, apiClientType: new (config: any) => T): T {
+    const cluster = kc.getCurrentCluster();
+    const user = kc.getCurrentUser();
+
+    if (!cluster) {
+      throw new Error('No active cluster!');
+    }
+
+    if (user?.token) {
+      const config = createConfiguration({
+        baseServer: new ServerConfiguration(cluster.server, {}),
+        middleware: [
+          setHeaderMiddleware('Authorization', `Bearer ${user.token}`)
+        ]
+      });
+
+      return new apiClientType(config);
+    }
+
+    return kc.makeApiClient(apiClientType as any);
   }
 
   /**
